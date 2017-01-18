@@ -8,6 +8,8 @@ import os
 import ast
 import yaml
 import argparse
+import tempfile
+import shutil
 
 from dockerfile_parse import DockerfileParser
 
@@ -59,13 +61,12 @@ class OpenShiftTemplateGenerator(object):
 
     def _load_oc_template(self, ports, volumes, env):
         templ = {}
-        import pprint
         with open(self.oc_template, 'r') as f:
             try:
                 templ = yaml.load(f)
             except yaml.YAMLError as exc:
                 print(exc)
-        pprint.pprint(templ)
+                return
         templ['metadata']['name'] = self.docker_image
         for obj in templ['objects']:
             obj['spec']['dockerImageRepository'] = self.docker_image
@@ -75,6 +76,7 @@ class OpenShiftTemplateGenerator(object):
                 ports_list.append({'containerPort': int(p)})
             volume_list = []
             volume_names = []
+            env_list = []
             if volumes:
                 for p in volumes:
                     volume_list.append({'mountPath': p,
@@ -82,9 +84,16 @@ class OpenShiftTemplateGenerator(object):
                     volume_names.append({'name': 'name_' + os.path.basename(p),
                                          'emptyDir': {}
                                          })
+            if env:
+                for e in env:
+                    key, val = e.split('=')
+                    env_list.append({'name': key,
+                                     'value': val})
             if 'template' in obj['spec']:
                 obj['spec']['template']['metadata']['labels']['name'] = self.docker_image
                 containers = obj['spec']['template']['spec']['containers'][0]
+                if env_list:
+                    containers['env'] = env_list
                 if ports_list:
                     containers['ports'] = ports_list
                 if volume_list:
@@ -93,17 +102,20 @@ class OpenShiftTemplateGenerator(object):
                 containers['name'] = self.docker_image
                 containers['image'] = self.docker_image
 
-
             if 'triggers' in obj['spec']:
                 for trig in obj['spec']['triggers']:
                     trig['imageChangeParams']['containerNames'] = [self.docker_image]
                     trig['imageChangeParams']['from']['name'] = self.docker_image
 
-
-        #pprint.pprint(templ)
-        with open(self.oc_template + "_tmp", 'w') as f:
+        tmp_dir = tempfile.mkdtemp()
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        os.makedirs(tmp_dir)
+        tmp_file = os.path.join(tmp_dir, os.path.basename(self.oc_template))
+        with open(tmp_file, 'w') as f:
             try:
-                yaml.dump(templ, f, default_flow_style=False)
+                yaml.safe_dump(templ, f, default_flow_style=False)
+                print("OpenShift template is generated here: %s" % (tmp_file))
             except yaml.YAMLError as exc:
                 print(exc)
 
