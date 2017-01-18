@@ -10,14 +10,24 @@ import yaml
 import argparse
 import tempfile
 import shutil
+import re
 
 from dockerfile_parse import DockerfileParser
 
 # Dockerfile path
 DOCKERFILE = "Dockerfile"
 
+EXPOSE = "EXPOSE"
+VOLUME = "VOLUME"
+LABEL = "LABEL"
+ENV = "ENV"
+
 # OpenShift template
 OPENSHIFT_TEMPLATE = "openshift-template.yml"
+
+
+def get_string(value):
+    return ast.literal_eval(value)
 
 
 class OpenShiftTemplateGenerator(object):
@@ -43,23 +53,48 @@ class OpenShiftTemplateGenerator(object):
             if f == OPENSHIFT_TEMPLATE:
                 self.oc_template = file_name
 
-    def _get_expose_and_volumes(self):
-        dfp = DockerfileParser(path=self.dir)
-        ports = []
-        volumes = []
-        env = []
-        INST = "instruction"
-        VALUE = "value"
-        for struct in dfp.structure:
-            if struct[INST] == "ENV":
-                env.append(struct[VALUE])
-            elif struct[INST] == "EXPOSE":
-                ports.extend(struct[VALUE].split())
-            elif struct[INST] == "VOLUME":
-                volumes.extend(ast.literal_eval(struct[VALUE]))
-        return ports, volumes, env
+    def _get_expose(self, value):
+        return value.split()
 
-    def _load_oc_template(self, ports, volumes, env):
+    def _get_env(self, value):
+        return [value]
+
+    def _get_volume(self, value):
+        return get_string(value)
+
+    def _get_labels(self, value):
+        labels = re.sub('\s\s+', ';', value).split(';')
+        label_dict = {l.split('=')[0]: l.split('=')[1] for l in labels}
+        return label_dict
+
+    def _get_docker_tags(self):
+        dfp = DockerfileParser(path=self.dir)
+        docker_dict = {}
+        inst = "instruction"
+        allowed_tags = [ENV, EXPOSE, VOLUME, LABEL]
+        functions = {ENV: self._get_env,
+                     EXPOSE: self._get_expose,
+                     VOLUME: self._get_volume,
+                     LABEL: self._get_labels}
+
+        import pprint
+        for struct in dfp.structure:
+            key = struct[inst]
+            val = struct["value"]
+            if key in allowed_tags:
+                if key == LABEL:
+                    if key not in docker_dict:
+                        docker_dict[key] = {}
+                    docker_dict[key].update(functions[key](val))
+                else:
+                    if key not in docker_dict:
+                        docker_dict[key] = []
+                    docker_dict[key].extend(functions[key](val))
+
+        pprint.pprint(docker_dict)
+        return docker_dict
+
+    def _load_oc_template(self, docker_dict):
         templ = {}
         with open(self.oc_template, 'r') as f:
             try:
@@ -67,25 +102,29 @@ class OpenShiftTemplateGenerator(object):
             except yaml.YAMLError as exc:
                 print(exc)
                 return
+        import pprint
+        templ['labels']['description'] = docker_dict[LABEL]['description']
+        templ['labels']['tags'] = docker_dict[LABEL]['io.openshift.tags']
+        templ['labels']['template'] = self.docker_image
         templ['metadata']['name'] = self.docker_image
         for obj in templ['objects']:
             obj['spec']['dockerImageRepository'] = self.docker_image
             obj['metadata']['name'] = self.docker_image
             ports_list = []
-            for p in ports:
+            for p in docker_dict[EXPOSE]:
                 ports_list.append({'containerPort': int(p)})
             volume_list = []
             volume_names = []
             env_list = []
-            if volumes:
-                for p in volumes:
+            if docker_dict[VOLUME]:
+                for p in docker_dict[VOLUME]:
                     volume_list.append({'mountPath': p,
                                         'name': 'name_' + os.path.basename(p)})
                     volume_names.append({'name': 'name_' + os.path.basename(p),
                                          'emptyDir': {}
                                          })
-            if env:
-                for e in env:
+            if docker_dict[ENV]:
+                for e in docker_dict[ENV]:
                     key, val = e.split('=')
                     env_list.append({'name': key,
                                      'value': val})
@@ -121,8 +160,8 @@ class OpenShiftTemplateGenerator(object):
 
     def run(self):
         self._get_files()
-        ports, volumes, env = self._get_expose_and_volumes()
-        self._load_oc_template(ports, volumes, env)
+        docker_dict = self._get_docker_tags()
+        self._load_oc_template(docker_dict)
 
 
 def main():
