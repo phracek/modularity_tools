@@ -1,5 +1,6 @@
 #!/bin/bash
 
+INI_FILE="$HOME/.config/openshift_ip.ini"
 echo "Login into OpenShift as system:admin via sudo."
 sudo oc login -u system:admin
 echo "Check whoami in OpenShift."
@@ -33,4 +34,12 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 echo "OpenShift docker-registry IP address is: $IP"
+if [[ ! -f "$INI_FILE" ]]; then
+    echo "IP=$IP" > $INI_FILE
+else
+    grep "^IP=$IP" $INI_FILE
+    if [[ $? -ne 0 ]]; then
+        echo "IP=$IP" > $INI_FILE
+    fi
+fi
 exit 0
