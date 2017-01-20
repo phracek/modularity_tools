@@ -2,6 +2,11 @@
 
 INI_FILE="$HOME/.config/openshift_ip.ini"
 echo "Login into OpenShift as system:admin via sudo."
+sudo oc status
+if [[ $? -ne 0 ]]; then
+    echo 'Your OpenShift instance is not started. Start it via `sudo oc cluster up`'
+    exit 1
+fi
 sudo oc login -u system:admin
 echo "Check whoami in OpenShift."
 user=$(sudo oc whoami)
@@ -22,15 +27,20 @@ IP=$(echo $docker_registry | cut -d' ' -f2)
 echo "Login back as developer. Enter developer password:"
 sudo oc login -u developer
 
-echo "Enter your email address and press [ENTER]:"
-read email
+echo "Getting email from git config."
+email=$(git config user.email)
+    if [[ x"$email" == "x" ]]; then
+    echo "Script did not find email in your .gitconfig. Specify it"
+    echo "Enter your email address and press [ENTER]:"
+    read email
+fi
 
 echo "Join local docker register with OpenShift docker-register."
 cmd="sudo docker login -u developer -p $(sudo oc whoami -t) -e $email $IP:5000"
 echo "Running command: $cmd"
 $cmd
 if [[ $? -ne 0 ]]; then
-    echo "command sudo docker login -u developer -p $(sudo oc whoami -t) -r $email $IP:5000 failed."
+    echo "command $cmd failed."
     exit 1
 fi
 echo "OpenShift docker-registry IP address is: $IP"
