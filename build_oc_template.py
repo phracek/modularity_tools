@@ -103,9 +103,10 @@ class OpenShiftTemplateGenerator(object):
                 print(exc)
                 return
         import pprint
-        templ['labels']['description'] = docker_dict[LABEL]['description']
-        templ['labels']['tags'] = docker_dict[LABEL]['io.openshift.tags']
-        templ['labels']['template'] = self.docker_image
+        labels = templ['metadata']['annotation']
+        labels['description'] = docker_dict[LABEL]['description']
+        labels['tags'] = docker_dict[LABEL]['io.openshift.tags']
+        labels['template'] = self.docker_image
         templ['metadata']['name'] = self.docker_image
         for obj in templ['objects']:
             obj['spec']['dockerImageRepository'] = self.docker_image
@@ -119,8 +120,8 @@ class OpenShiftTemplateGenerator(object):
             if docker_dict[VOLUME]:
                 for p in docker_dict[VOLUME]:
                     volume_list.append({'mountPath': p,
-                                        'name': 'name_' + os.path.basename(p)})
-                    volume_names.append({'name': 'name_' + os.path.basename(p),
+                                        'name': 'name-' + os.path.basename(p)})
+                    volume_names.append({'name': 'name-' + os.path.basename(p),
                                          'emptyDir': {}
                                          })
             if docker_dict[ENV]:
@@ -144,7 +145,7 @@ class OpenShiftTemplateGenerator(object):
             if 'triggers' in obj['spec']:
                 for trig in obj['spec']['triggers']:
                     trig['imageChangeParams']['containerNames'] = [self.docker_image]
-                    trig['imageChangeParams']['from']['name'] = self.docker_image
+                    trig['imageChangeParams']['from']['name'] = self.docker_image + ":latest"
 
         tmp_dir = tempfile.mkdtemp()
         if os.path.isdir(tmp_dir):
