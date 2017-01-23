@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+DI=$1
+if [[ -z $DI ]]; then
+    echo "You have to specify a docker image for pushing into OpenShift registry."
+    exit 1
+fi
+
+docker images | grep "^$DI"
+if [[ $? -ne 0 ]]; then
+    echo 'The docker image was not found in the output of `docker images` command'
+    exit 1
+fi
+
+INI_FILE="$HOME/.config/openshift_ip.ini"
+
+if [[ ! -f "$INI_FILE" ]]; then
+    echo "Please run get_oc_registry to save OpenShift IP docker registry."
+    exit 1
+fi
+
+IP=$(cat $INI_FILE | cut -d'=' -f2)
+if [[ -z $IP ]]; then
+    echo "Please run get_oc_registry again. OpenShift docker registry IP is empty."
+fi
+
+docker tag $DI $IP:5000/myproject/$DI
