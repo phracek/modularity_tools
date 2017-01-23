@@ -42,14 +42,19 @@ class OpenShiftTemplateGenerator(object):
     def __init__(self, args=None):
         self.dir = os.getcwd()
         self.docker_image = args.image
+        if args.dockerfile is None:
+            self.dockerfile = 'Dockerfile'
+        else:
+            self.dockerfile = os.path.join(self.dir, args.dockerfile)
 
     def _get_files(self):
+        if not os.path.exists(self.dockerfile):
+            print("Dockerfile %s does not exists." % self.dockerfile)
+            return
         for f in os.listdir(self.dir):
             if os.path.isdir(os.path.join(self.dir, f)):
                 continue
             file_name = os.path.join(self.dir, f)
-            if f == DOCKERFILE:
-                self.docker_file = file_name
             if f == OPENSHIFT_TEMPLATE:
                 self.oc_template = file_name
 
@@ -57,7 +62,7 @@ class OpenShiftTemplateGenerator(object):
         return value.split()
 
     def _get_env(self, value):
-        return [value]
+        return value.split(" ")
 
     def _get_volume(self, value):
         return get_string(value)
@@ -68,7 +73,12 @@ class OpenShiftTemplateGenerator(object):
         return label_dict
 
     def _get_docker_tags(self):
-        dfp = DockerfileParser(path=self.dir)
+        tmp_dir = tempfile.mkdtemp()
+        if os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        os.makedirs(tmp_dir)
+        shutil.copyfile(self.dockerfile, os.path.join(tmp_dir, "Dockerfile"))
+        dfp = DockerfileParser(path=tmp_dir)
         docker_dict = {}
         inst = "instruction"
         allowed_tags = [ENV, EXPOSE, VOLUME, LABEL]
@@ -77,7 +87,6 @@ class OpenShiftTemplateGenerator(object):
                      VOLUME: self._get_volume,
                      LABEL: self._get_labels}
 
-        import pprint
         for struct in dfp.structure:
             key = struct[inst]
             val = struct["value"]
@@ -91,7 +100,7 @@ class OpenShiftTemplateGenerator(object):
                         docker_dict[key] = []
                     docker_dict[key].extend(functions[key](val))
 
-        pprint.pprint(docker_dict)
+        shutil.rmtree(tmp_dir)
         return docker_dict
 
     def _load_oc_template(self, docker_dict):
@@ -102,10 +111,13 @@ class OpenShiftTemplateGenerator(object):
             except yaml.YAMLError as exc:
                 print(exc)
                 return
-        import pprint
         labels = templ['metadata']['annotation']
-        labels['description'] = docker_dict[LABEL]['description']
-        labels['tags'] = docker_dict[LABEL]['io.openshift.tags']
+        try:
+            labels['description'] = docker_dict[LABEL]['description']
+            labels['tags'] = docker_dict[LABEL]['io.openshift.tags']
+        except KeyError:
+            labels['description'] = "EMPTY_DESCRIPTION"
+            labels['tags'] = 'EMPTY_TAGS'
         labels['template'] = self.docker_image
         templ['metadata']['name'] = self.docker_image
         for obj in templ['objects']:
@@ -166,11 +178,15 @@ class OpenShiftTemplateGenerator(object):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Creates an openshift template YAML file.")
+    parser = argparse.ArgumentParser(description="Creates an OpenShift template YAML file.")
     parser.add_argument(
         "image",
         metavar='IMAGE',
         help="docker image name",
+    )
+    parser.add_argument(
+        "--dockerfile",
+        help="Specify Dockerfile name. Default is Dockerfile."
     )
     args = parser.parse_args()
     otg = OpenShiftTemplateGenerator(args)
