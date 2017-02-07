@@ -168,14 +168,15 @@ class OpenShiftTemplateGenerator(object):
             except yaml.YAMLError as exc:
                 print(exc)
 
-    def generate_oc_template(self):
-        templ = self._load_oc_template()
-
+    def get_docker_directives(self, templ):
         if self.docker_dict:
             labels = self._get_labels(templ)
             volume_list, volume_names = self._get_docker_volumes()
             env_list = self._get_docker_env()
             ports_list = self._get_docker_expose()
+        return labels, volume_list, volume_names, env_list, ports_list
+
+    def generate_oc_template(self, templ, labels, volume_list, volume_names, env_list, ports_list):
         templ['metadata']['name'] = self.docker_image
         templ['metadata']['annotation'] = labels
         for obj in templ['objects']:
@@ -204,7 +205,8 @@ class OpenShiftTemplateGenerator(object):
     def run(self):
         self._get_files()
         self._get_docker_tags()
-        tmpl = self._load_oc_template(self.docker_dict)
+        templ = self._load_oc_template()
+        tmpl = self.generate_oc_template(templ, *self.get_docker_directives(templ))
         self.write_oc_template(tmpl)
 
 

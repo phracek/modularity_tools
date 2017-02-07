@@ -125,5 +125,66 @@ class TestOCTemplate(object):
                                                }
                                       }]
                          }
-        tmpl = self.ostg.generate_oc_template()
+        templ = self.ostg._load_oc_template()
+        (args) = self.ostg.get_docker_directives(templ)
+        tmpl = self.ostg.generate_oc_template(templ, *args)
         assert tmpl == expected_tmpl
+
+    def test_missing_annotation(self):
+        expected_tmpl = {'apiVersion': 'v1',
+                         'kind': 'Template',
+                         'labels': {'description': None, 'tags': None, 'template': None},
+                         'metadata': {'annotation': {'tags': u'"TAGS"',
+                                      'template': 'docker_image'},
+                                      'name': 'docker_image'},
+                         'objects': [{'apiVersion': 'v1',
+                                      'kind': 'ImageStream',
+                                      'metadata': {'name': 'docker_image'},
+                                      'spec': {'dockerImageRepository': 'docker_image'},
+                                      'tags': [{'name': 'latest'}]},
+                                     {'apiVersion': 'v1',
+                                      'kind': 'DeploymentConfig',
+                                      'metadata': {'name': 'docker_image'},
+                                      'spec': {'dockerImageRepository': 'docker_image',
+                                               'replicas': 1,
+                                               'strategy': {'type': 'Rolling'},
+                                               'template': {'metadata': {'labels': {'name': 'docker_image'}},
+                                                            'spec': {'containers': [{'env': [{'name': u'POSTFIX_SMTP_PORT',
+                                                                                              'value': u'10025'}],
+                                                                                     'image': 'docker_image',
+                                                                                     'imagePullPolicy': 'Never',
+                                                                                     'name': 'docker_image',
+                                                                                     'ports': [{'containerPort': 1234},
+                                                                                               {'containerPort': 2345},
+                                                                                               {'containerPort': 6789}],
+                                                                                     'volumeMounts': [{'mountPath': '/var/log',
+                                                                                                       'name': 'name-var-log'},
+                                                                                                      {'mountPath': '/var/spool/log',
+                                                                                                       'name': 'name-var-spool-log'},
+                                                                                                      {'mountPath': '/var/spool/mail',
+                                                                                                       'name': 'name-var-spool-mail'}]}],
+                                                                     'volumes': [{'emptyDir': {},
+                                                                                  'name': 'name-var-log'},
+                                                                                 {'emptyDir': {},
+                                                                                  'name': 'name-var-spool-log'},
+                                                                                 {'emptyDir': {},
+                                                                                  'name': 'name-var-spool-mail'}]}},
+                                               'triggers': [{'imageChangeParams': {'automatic': True,
+                                                                                   'containerNames': ['docker_image'],
+                                                                                   'from': {'kind': 'ImageStreamTag',
+                                                                                            'name': 'docker_image:latest'}},
+                                                             'type': 'ImageChange'}]
+                                               }
+                                      }]
+                         }
+        templ = self.ostg._load_oc_template()
+        labels, volume_list, volume_names, env_list, ports_list = self.ostg.get_docker_directives(templ)
+        del labels['description']
+        tmpl = self.ostg.generate_oc_template(templ,
+                                              labels,
+                                              volume_list,
+                                              volume_names,
+                                              env_list,
+                                              ports_list)
+        assert tmpl == expected_tmpl
+
